@@ -6,6 +6,7 @@ from utils.upi_generator import generate_upi_link
 from dal import db
 import qrcode
 from io import BytesIO
+from auth_module import login, profile_setup
 
 
 def get_qr_image(link):
@@ -18,41 +19,53 @@ def get_qr_image(link):
 def main():
     st.set_page_config(page_title="BlessedWithKaineetam", layout="centered")
 
-    pages = ["Create Blessing", "View Blessing", "Thank You", "Dashboard"]
+    login()  # Login in sidebar first
+
+    pages = ["Create Blessing", "View Blessing", "Thank You", "Dashboard", "Profile"]
     selected_page = st.sidebar.selectbox("Navigate", pages)
 
     st.sidebar.caption("🔍 Query Params:")
     st.sidebar.json(st.query_params)
 
+    # --- PAGE: Profile Setup ---
+    if selected_page == "Profile":
+        profile_setup()
+
     # --- PAGE: Create Blessing ---
-    if selected_page == "Create Blessing":
+    elif selected_page == "Create Blessing":
         st.title("Create a Vishu Blessing")
+
+        user = st.session_state.get("user")
+        if not user:
+            st.warning("Please log in first from the sidebar.")
+            return
 
         with st.form("create_blessing_form"):
             recipient = st.text_input("Recipient's Name")
-            sender = st.text_input("Your Name")
             tone = st.selectbox("Blessing Tone", ["modern", "traditional", "funny"])
             custom_message = st.text_area("Custom Message (optional)")
-            upi_id = st.text_input("Your UPI ID (for receiving Kaineetam)")
             submitted = st.form_submit_button("Generate Blessing")
 
-            if submitted and recipient and sender and upi_id:
+            if submitted and recipient:
                 bless_id = str(uuid.uuid4())[:8]
                 blessing_line = generate_blessing(tone)
                 bless_data = {
                     "recipient": recipient,
-                    "sender": sender,
+                    "sender": user.get("name"),
                     "tone": tone,
-                    "upi": upi_id,
+                    "upi": user.get("upi"),
                     "custom_message": custom_message,
                     "blessing": blessing_line,
-                    "created_at": str(datetime.datetime.now())
+                    "created_at": str(datetime.datetime.now()),
+                    "owner_id": user.get("user_id")
                 }
                 db.save_blessing(bless_id, bless_data)
                 st.success(f"Blessing Created! Share this code: `{bless_id}`")
+                base_url = st.request.url.split('?')[0]
+                full_link = f"{base_url}?page=view&code={bless_id}"
                 st.write("**Share this link with your friend:**")
-                st.code(f"?page=view&code={bless_id}")
-                st.markdown(f"[Click to view it now](?page=view&code={bless_id})")
+                st.code(full_link)
+                st.markdown(f"[Click to view it now]({full_link})")
 
     # --- PAGE: View Blessing ---
     elif selected_page == "View Blessing":
@@ -82,11 +95,11 @@ def main():
             st.markdown("---")
             st.subheader("Already Paid? Let us know")
             with st.form("payment_confirmation"):
-                name = st.text_input("Your Name")
                 paid_amount = st.number_input("Amount Paid (₹)", min_value=1, step=1, key="log_amount")
                 note = st.text_area("Optional message")
                 confirm_paid = st.form_submit_button("Confirm Payment")
-                if confirm_paid and name:
+                if confirm_paid:
+                    name = st.session_state.get("user", {}).get("name", "Anonymous")
                     log = {
                         "name": name,
                         "amount": paid_amount,
@@ -95,7 +108,6 @@ def main():
                     }
                     db.save_payment(bless_id, log)
                     st.success("Thank you! Your Kaineetam has been recorded.")
-                    st.markdown(f"[Go to Thank You Page](?page=thankyou&code={bless_id})")
 
     # --- PAGE: Thank You ---
     elif selected_page == "Thank You":
