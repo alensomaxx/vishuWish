@@ -6,7 +6,7 @@ from utils.upi_generator import generate_upi_link
 from dal import db
 import qrcode
 from io import BytesIO
-from auth_module import login, profile_setup
+##from auth_module import login, profile_setup
 
 
 def get_qr_image(link):
